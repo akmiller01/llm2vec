@@ -6,3 +6,4 @@ wandb/**
 output/**
 venv
 out
+paf-pre-embedded

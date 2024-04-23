@@ -1,5 +1,5 @@
 import os
-from datasets import load_dataset, concatenate_datasets
+from datasets import load_dataset, concatenate_datasets, load_from_disk
 import evaluate
 from classifier_model import PreEmbeddedSequenceClassification
 from llm2vec import LLM2Vec
@@ -46,7 +46,7 @@ def remap_binary(example):
 
 # hyperparameters
 batch_size = 64 # how many independent sequences will we process in parallel?
-max_iters = 30000
+max_iters = 60000
 eval_interval = 300
 learning_rate = 1e-6
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -92,6 +92,8 @@ def main():
         shuffle=True,
         seed=42
     )
+    dataset.save_to_disk("paf-pre-embedded")
+    # dataset = load_from_disk("paf-pre-embedded")
     train_x = [torch.tensor(emb, dtype=torch.float32) for emb in dataset['train'][config['dv']]]
     test_x = [torch.tensor(emb, dtype=torch.float32) for emb in dataset['test'][config['dv']]]
     train_y = [int(l) for l in dataset['train']['label']]
