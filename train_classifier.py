@@ -2,7 +2,6 @@ import os
 from datasets import load_dataset, concatenate_datasets
 import evaluate
 from classifier_model import PreEmbeddedSequenceClassification
-import numpy as np
 from llm2vec import LLM2Vec
 
 import torch
@@ -49,7 +48,7 @@ def remap_binary(example):
 batch_size = 64 # how many independent sequences will we process in parallel?
 max_iters = 30000
 eval_interval = 300
-learning_rate = 1e-5
+learning_rate = 1e-6
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 # ------------
@@ -70,9 +69,7 @@ torch.manual_seed(1337)
 
 
 clf_metrics = evaluate.combine(["accuracy", "f1", "precision", "recall"])
-def compute_metrics(eval_pred):
-    predictions, labels = eval_pred
-    predictions = np.argmax(predictions, axis=1)
+def compute_metrics(predictions, labels):
     return clf_metrics.compute(predictions=predictions, references=labels)
 
 
@@ -81,7 +78,7 @@ def main():
     dataset = dataset.filter(lambda example: example['labels'] != 'Unrelated')
     dataset = dataset.map(remap_binary, num_proc=8, remove_columns=["labels"])
     # Rebalance
-    positive = dataset.filter(lambda example: example["label"] == 1).select(range(50))
+    positive = dataset.filter(lambda example: example["label"] == 1)
     negative = dataset.filter(lambda example: example["label"] == 0)
     negative = negative.shuffle(seed=42)
     negative = negative.select(range(positive.num_rows))
@@ -131,16 +128,25 @@ def main():
         for split in ['train', 'val']:
             losses = torch.zeros(eval_iters)
             accuracies = torch.zeros(eval_iters)
+            precisions = torch.zeros(eval_iters)
+            recalls = torch.zeros(eval_iters)
+            f1s = torch.zeros(eval_iters)
             for k in range(eval_iters):
                 X, Y = get_batch(split)
                 logits, loss = model(X, Y)
                 if split == 'val':
                     pred = logits.max(1).indices
-                    accuracy = compute_metrics(pred, Y)['accuracy']
-                    accuracies[k] = accuracy
+                    metrics = compute_metrics(pred, Y)
+                    accuracies[k] = metrics['accuracy']
+                    precisions[k] = metrics['precision']
+                    recalls[k] = metrics['recall']
+                    f1s[k] = metrics['f1']
                 losses[k] = loss.item()
             out[split] = losses.mean()
             out['accuracy'] = accuracies.mean()
+            out['precision'] = precisions.mean()
+            out['recall'] = recalls.mean()
+            out['f1'] = f1s.mean()
         model.train()
         return out
     
@@ -156,7 +162,7 @@ def main():
         if iter_num % eval_interval == 0:
             losses = estimate_loss()
             print(
-                f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val acc {losses['accuracy']:.4f}"
+                f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val acc {losses['accuracy']:.4f}, val precision {losses['precision']:.4f}, val recall {losses['recall']:.4f}, val f1 {losses['f1']:.4f}"
             )
             if losses['val'] < best_val_loss:
                 best_val_loss = losses['val']
