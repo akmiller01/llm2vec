@@ -7,3 +7,5 @@ output/**
 venv
 out
 paf-pre-embedded
+out-gist
+paf-pre-embedded-gist

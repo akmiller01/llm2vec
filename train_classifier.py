@@ -46,9 +46,9 @@ def remap_binary(example):
 
 # hyperparameters
 batch_size = 64 # how many independent sequences will we process in parallel?
-max_iters = 60000
+max_iters = 30000
 eval_interval = 300
-learning_rate = 1e-6
+learning_rate = 5e-7
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 # ------------
@@ -74,26 +74,26 @@ def compute_metrics(predictions, labels):
 
 
 def main():
-    dataset = load_dataset("alex-miller/cdp-paf-meta-limited", split="train")
-    dataset = dataset.filter(lambda example: example['labels'] != 'Unrelated')
-    dataset = dataset.map(remap_binary, num_proc=8, remove_columns=["labels"])
-    # Rebalance
-    positive = dataset.filter(lambda example: example["label"] == 1)
-    negative = dataset.filter(lambda example: example["label"] == 0)
-    negative = negative.shuffle(seed=42)
-    negative = negative.select(range(positive.num_rows))
-    dataset = concatenate_datasets([negative, positive])
-    # Embed
-    dataset = dataset.add_column('embedding', l2v.encode(dataset['text']).tolist())
-    # Split
-    dataset = dataset.class_encode_column('label').train_test_split(
-        test_size=0.2,
-        stratify_by_column="label",
-        shuffle=True,
-        seed=42
-    )
-    dataset.save_to_disk("paf-pre-embedded")
-    # dataset = load_from_disk("paf-pre-embedded")
+    # dataset = load_dataset("alex-miller/cdp-paf-meta-limited", split="train")
+    # dataset = dataset.filter(lambda example: example['labels'] != 'Unrelated')
+    # dataset = dataset.map(remap_binary, num_proc=8, remove_columns=["labels"])
+    # # Rebalance
+    # positive = dataset.filter(lambda example: example["label"] == 1)
+    # negative = dataset.filter(lambda example: example["label"] == 0)
+    # negative = negative.shuffle(seed=42)
+    # negative = negative.select(range(positive.num_rows))
+    # dataset = concatenate_datasets([negative, positive])
+    # # Embed
+    # dataset = dataset.add_column('embedding', l2v.encode(dataset['text']).tolist())
+    # # Split
+    # dataset = dataset.class_encode_column('label').train_test_split(
+    #     test_size=0.2,
+    #     stratify_by_column="label",
+    #     shuffle=True,
+    #     seed=42
+    # )
+    # dataset.save_to_disk("paf-pre-embedded")
+    dataset = load_from_disk("paf-pre-embedded")
     train_x = [torch.tensor(emb, dtype=torch.float32) for emb in dataset['train'][config['dv']]]
     test_x = [torch.tensor(emb, dtype=torch.float32) for emb in dataset['test'][config['dv']]]
     train_y = [int(l) for l in dataset['train']['label']]
@@ -108,7 +108,7 @@ def main():
     model_args = {
         "num_labels": len(id2label.keys()),
         "dim": 2048,
-        "seq_classif_dropout": 0.4
+        "seq_classif_dropout": 0.2
     }
     model = PreEmbeddedSequenceClassification(model_args)
 
