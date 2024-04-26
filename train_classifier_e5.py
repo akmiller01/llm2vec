@@ -3,20 +3,7 @@ from datasets import load_dataset, concatenate_datasets, load_from_disk
 import evaluate
 from classifier_model import PreEmbeddedSequenceClassification
 import torch
-import torch.nn.functional as F
 from sentence_transformers import SentenceTransformer
-
-
-
-unique_labels = ["Crisis finance", "PAF"]
-id2label = {i: label for i, label in enumerate(unique_labels)}
-label2id = {id2label[i]: i for i in id2label.keys()}
-
-
-def remap_binary(example):
-    example['label'] = 'PAF' if 'PAF' in example['labels'] else 'Crisis finance'
-    example['label'] = label2id[example['label']]
-    return example
 
 
 # hyperparameters
@@ -38,6 +25,16 @@ config_keys.append('stratify_column')
 # exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 
+unique_labels = ["Crisis finance", "PAF"]
+id2label = {i: label for i, label in enumerate(unique_labels)}
+label2id = {id2label[i]: i for i in id2label.keys()}
+
+
+def remap_binary(example):
+    example['label'] = 'PAF' if 'PAF' in example['labels'] else 'Crisis finance'
+    example['label'] = label2id[example['label']]
+    return example
+
 
 os.makedirs(out_dir, exist_ok=True)
 torch.manual_seed(1337)
@@ -49,43 +46,48 @@ def compute_metrics(predictions, labels):
 
 
 def main():
-    # dataset = load_dataset("alex-miller/cdp-paf-meta-limited", split="train")
-    # dataset = dataset.filter(lambda example: example['labels'] != 'Unrelated')
-    # dataset = dataset.map(remap_binary, num_proc=8, remove_columns=["labels"])
-    # # Rebalance
-    # positive = dataset.filter(lambda example: example["label"] == 1)
-    # negative = dataset.filter(lambda example: example["label"] == 0)
-    # negative = negative.shuffle(seed=42)
-    # negative = negative.select(range(positive.num_rows))
-    # dataset = concatenate_datasets([negative, positive])
-    # # Embed
-    # embedding_model = SentenceTransformer('intfloat/multilingual-e5-large-instruct')
-    # embeddings = embedding_model.encode(dataset['text'], convert_to_tensor=True, normalize_embeddings=True)
-    # dataset = dataset.add_column('embedding', embeddings.tolist())
-    # # Split
-    # dataset = dataset.class_encode_column('label').train_test_split(
-    #     test_size=0.2,
-    #     stratify_by_column="label",
-    #     shuffle=True,
-    #     seed=42
-    # )
-    # dataset.save_to_disk("paf-pre-embedded-e5")
-    dataset = load_from_disk("paf-pre-embedded-e5")
+    dataset = load_dataset("alex-miller/cdp-paf-meta-limited", split="train")
+    dataset = dataset.filter(lambda example: example['labels'] != 'Unrelated')
+    dataset = dataset.map(remap_binary, num_proc=8, remove_columns=["labels"])
+    # Rebalance
+    positive = dataset.filter(lambda example: example["label"] == 1)
+    negative = dataset.filter(lambda example: example["label"] == 0)
+    negative = negative.shuffle(seed=42)
+    negative = negative.select(range(positive.num_rows * 2))
+    dataset = concatenate_datasets([negative, positive])
+    negative_rows = negative.num_rows
+    positive_rows = positive.num_rows
+    total_rows = dataset.num_rows
+    weights = torch.tensor(
+        [
+            total_rows / negative_rows,
+            total_rows / positive_rows
+        ]
+    )
+    # Embed
+    embedding_model = SentenceTransformer('intfloat/multilingual-e5-large-instruct')
+    embeddings = embedding_model.encode(dataset['text'], convert_to_tensor=True, normalize_embeddings=True)
+    dataset = dataset.add_column('embedding', embeddings.tolist())
+    # Split
+    dataset = dataset.class_encode_column('label').train_test_split(
+        test_size=0.2,
+        stratify_by_column="label",
+        shuffle=True,
+        seed=42
+    )
+    dataset.save_to_disk("paf-pre-embedded-e5")
+    # dataset = load_from_disk("paf-pre-embedded-e5")
     train_x = [torch.tensor(emb, dtype=torch.float32) for emb in dataset['train'][config['dv']]]
     test_x = [torch.tensor(emb, dtype=torch.float32) for emb in dataset['test'][config['dv']]]
     train_y = [int(l) for l in dataset['train']['label']]
     test_y = [int(l) for l in dataset['test']['label']]
-    print("Training stratification: {}%".format(
-        round((sum(train_y)/len(train_y))*100, 1)
-    ))
-    print("Testing stratification: {}%".format(
-        round((sum(test_y)/len(test_y))*100, 1)
-    ))
+    print("Weights: ", weights)
 
     model_args = {
         "num_labels": len(id2label.keys()),
         "dim": 1024,
-        "seq_classif_dropout": 0.2
+        "seq_classif_dropout": 0.2,
+        "weights": weights
     }
     model = PreEmbeddedSequenceClassification(model_args)
 
