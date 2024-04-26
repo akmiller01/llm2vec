@@ -87,7 +87,8 @@ def main():
         "num_labels": len(id2label.keys()),
         "dim": 1024,
         "seq_classif_dropout": 0.2,
-        "weights": weights
+        "weights": weights,
+        "label_smoothing": 0.0
     }
     model = PreEmbeddedSequenceClassification(model_args)
 

@@ -8,6 +8,7 @@ class PreEmbeddedSequenceClassification(nn.Module):
         self.num_labels = config['num_labels']
         self.problem_type = None
         self.weights = config.get('weights', None)
+        self.label_smoothing = config.get('label_smoothing', 0.0)
 
         self.pre_classifier = nn.Linear(config['dim'], config['dim'])
         self.classifier = nn.Linear(config['dim'], config['num_labels'])
@@ -37,7 +38,7 @@ class PreEmbeddedSequenceClassification(nn.Module):
                 else:
                     loss = loss_fct(logits, targets)
             elif self.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss(weight=self.weights)
+                loss_fct = CrossEntropyLoss(weight=self.weights, label_smoothing=self.label_smoothing)
                 loss = loss_fct(logits.view(-1, self.num_labels), targets.view(-1))
             elif self.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss(weight=self.weights)
